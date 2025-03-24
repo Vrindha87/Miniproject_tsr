@@ -2,34 +2,31 @@ import gradio as gr
 from ultralytics import YOLO
 import os
 
-# Load the trained model
-model_path = "yolov8_low_visibility_trained.pt"  # Ensure this file is in the same directory
-model = YOLO(model_path)
+# Load your trained model
+model = YOLO("yolov8_low_visibility_trained.pt")
 
-def detect_traffic_signs(video):
-    if not video:
+def detect_traffic_signs(video_path):
+    try:
+        print("📥 Video input received:", video_path)
+
+        # Run prediction
+        results = model.predict(video_path, conf=0.25, iou=0.5)
+
+        # Save the prediction video to known path
+        output_path = "output_detected.mp4"
+        results[0].save(filename=output_path)
+
+        # Check if file was saved
+        if os.path.exists(output_path):
+            print("✅ Output video saved:", output_path)
+            return output_path
+        else:
+            print("❌ Failed to save output.")
+            return None
+    except Exception as e:
+        print("❌ ERROR:", e)
         return None
 
-    video_path = video  # ✅ Get raw path instead of video.name
-
-    # YOLO output folder
-    output_folder = "runs/detect/predict"
-    os.makedirs(output_folder, exist_ok=True)
-
-    # Run prediction
-    results = model.predict(video_path, save=True, conf=0.25, iou=0.5)
-
-    # Find output .mp4 file
-    detected_video = None
-    for root, _, files in os.walk(output_folder):
-        for file in files:
-            if file.endswith(".mp4"):
-                detected_video = os.path.join(root, file)
-                break
-
-    return detected_video
-
-# Create Gradio Interface
 demo = gr.Interface(
     fn=detect_traffic_signs,
     inputs=gr.Video(label="Upload Traffic Video"),
@@ -38,5 +35,4 @@ demo = gr.Interface(
     description="Upload a traffic video, and the model will detect the signs!"
 )
 
-# Run the app
-demo.launch(share=True)
+demo.launch()

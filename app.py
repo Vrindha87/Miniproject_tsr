@@ -6,22 +6,20 @@ import os
 model_path = "yolov8_low_visibility_trained.pt"  # Ensure this file is in the same directory
 model = YOLO(model_path)
 
-# Function to process video
 def detect_traffic_signs(video):
     if not video:
         return None
 
-    # Get video path
-    video_path = video.name  # Fetch uploaded file path
+    video_path = video  # ✅ Get raw path instead of video.name
 
-    # Set YOLO output directory
+    # YOLO output folder
     output_folder = "runs/detect/predict"
     os.makedirs(output_folder, exist_ok=True)
 
-    # Run detection
+    # Run prediction
     results = model.predict(video_path, save=True, conf=0.25, iou=0.5)
 
-    # Find the detected video
+    # Find output .mp4 file
     detected_video = None
     for root, _, files in os.walk(output_folder):
         for file in files:
@@ -29,7 +27,7 @@ def detect_traffic_signs(video):
                 detected_video = os.path.join(root, file)
                 break
 
-    return detected_video  # Return the processed video path
+    return detected_video
 
 # Create Gradio Interface
 demo = gr.Interface(

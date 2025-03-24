@@ -19,4 +19,4 @@ demo = gr.Interface(
     description="Upload a traffic video, and the model will detect the signs!"
 )
 
-demo.launch()
+demo.launch(share=True)

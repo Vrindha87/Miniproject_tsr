@@ -1,53 +1,49 @@
 import gradio as gr
 from ultralytics import YOLO
 import os
-import cv2
-import numpy as np
 
-# ==== Load Model ====
-model = YOLO("yolov8_low_visibility_trained.pt")  # Make sure this file is uploaded!
+# Load the trained model
+model_path = "yolov8_low_visibility_trained.pt"  # Make sure this is in the same folder
+model = YOLO(model_path)
 
-# ==== Detection Function ====
+# Detection function
 def detect_traffic_signs(video):
-    if video is None:
-        return None
+    if not video:
+        return "No video input provided."
 
-    # Step 1: Get path of uploaded video
-    video_path = video.name
+    video_path = video  # FIXED: Gradio passes file path as string
 
-    # Step 2: Run YOLO prediction with stream=True
-    results = model.predict(source=video_path, stream=True, conf=0.25, iou=0.5)
+    # Run YOLOv8 prediction
+    results = model.predict(
+        source=video_path,
+        save=True,
+        save_conf=True,
+        conf=0.25,
+        iou=0.5,
+        stream=False
+    )
 
-    # Step 3: Prepare to save frames
-    frame_list = []
-    for result in results:
-        im_array = result.plot()  # This draws boxes on the image
-        frame_list.append(im_array)
+    # Find the output video path
+    output_dir = model.predictor.save_dir
+    output_video = None
+    for f in os.listdir(output_dir):
+        if f.endswith(".mp4"):
+            output_video = os.path.join(output_dir, f)
+            break
 
-    if not frame_list:
-        return None  # No detections at all
+    if output_video is None:
+        return "Error: No video output found."
 
-    # Step 4: Save the new video using OpenCV
-    height, width, _ = frame_list[0].shape
-    output_path = "detected_video.mp4"
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, 20.0, (width, height))
+    return output_video
 
-    for frame in frame_list:
-        out.write(frame)
-
-    out.release()
-
-    return output_path  # Return video path
-
-# ==== Gradio UI ====
+# Gradio Interface
 demo = gr.Interface(
     fn=detect_traffic_signs,
     inputs=gr.Video(label="Upload Traffic Video"),
     outputs=gr.Video(label="Detected Traffic Signs"),
     title="Traffic Sign Detection",
-    description="Upload a traffic video, and the model will detect the signs!"
+    description="Upload a traffic video. The model will detect and return the annotated video."
 )
 
-# ==== Launch ====
-demo.launch()
+# Launch with sharing
+demo.launch(share=True)

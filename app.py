@@ -7,14 +7,15 @@ from ultralytics import YOLO
 import gradio as gr
 
 # Load your trained model
-model = YOLO("yolov8_low_visibility_trained.pt")  # Change to your correct path if needed
+model = YOLO("yolov8_low_visibility_trained.pt")  # Make sure this path is correct
 
 # --- Batch Detection (Full video, then return output file) ---
-def detect_traffic_signs(video_path):
-    if not video_path:
+def detect_traffic_signs(video_file):
+    if not video_file:
         return "No input video"
 
-    # Run detection
+    video_path = video_file.name  # ✅ Extract the file path from uploaded file
+
     model.predict(
         source=video_path,
         save=True,
@@ -38,9 +39,10 @@ def detect_traffic_signs(video_path):
 
     return final_output_path
 
-
 # --- Real-Time-style Detection (frame-by-frame processing) ---
-def stream_video_detection(video_path):
+def stream_video_detection(video_file):
+    video_path = video_file.name  # ✅ Extract path
+
     cap = cv2.VideoCapture(video_path)
 
     while cap.isOpened():
@@ -48,16 +50,13 @@ def stream_video_detection(video_path):
         if not ret:
             break
 
-        # Run prediction
         results = model.predict(frame, conf=0.25, iou=0.5)
         boxes = results[0].boxes.xyxy.cpu().numpy()
 
-        # Draw boxes
         for box in boxes:
             x1, y1, x2, y2 = map(int, box[:4])
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        # Yield for Gradio to stream frame
         yield cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     cap.release()
@@ -69,13 +68,13 @@ with gr.Blocks() as demo:
     gr.Markdown("Upload a video to detect traffic signs using a YOLOv8 model.")
 
     with gr.Tab("1️⃣ Batch Detection (Returns Processed Video)"):
-        input_video = gr.Video(label="Upload Video", type="filepath")
-        output_video = gr.Video(label="Detected Video", type="filepath")
+        input_video = gr.Video(label="Upload Video")  # ✅ Removed type="filepath"
+        output_video = gr.Video(label="Detected Video")
         run_btn = gr.Button("Run Detection")
         run_btn.click(fn=detect_traffic_signs, inputs=input_video, outputs=output_video)
 
     with gr.Tab("2️⃣ Live-style Detection (Frame by Frame)"):
-        input_stream = gr.Video(label="Upload Video for Streaming", type="filepath")
+        input_stream = gr.Video(label="Upload Video for Streaming")  # ✅ Removed type
         stream_output = gr.Image(label="Live Frame Output")
         stream_btn = gr.Button("Start Streaming")
         stream_btn.click(fn=stream_video_detection, inputs=input_stream, outputs=stream_output)

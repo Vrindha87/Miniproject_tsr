@@ -1,81 +1,61 @@
 import os
 import cv2
-import glob
-import shutil
 import numpy as np
 from ultralytics import YOLO
 import gradio as gr
 
-# Load your trained model
-model = YOLO("yolov8_low_visibility_trained.pt")  # ✅ Change if your model is in a different path
+# Load model
+model = YOLO("yolov8_low_visibility_trained.pt")
 
-# --- Batch Detection (Full video, returns processed video file) ---
-def detect_traffic_signs(video_file):
-    if not video_file:
+def detect_traffic_signs(video_path):
+    if not video_path:
         return "No input video"
 
-    video_path = video_file  # ✅ FIXED: video_file is already a path string
-
-    model.predict(
-        source=video_path,
-        save=True,
-        save_conf=True,
-        conf=0.25,
-        iou=0.5
-    )
-
-    # Locate the latest prediction folder
-    run_dirs = sorted(glob.glob("runs/detect/predict*"), key=os.path.getmtime)
-    latest_run = run_dirs[-1]
-
-    # Find the output .mp4 file
-    output_files = glob.glob(os.path.join(latest_run, "*.mp4"))
-    if not output_files:
-        return "No video result found"
-
-    final_output_path = "output.mp4"
-    shutil.copy(output_files[0], final_output_path)
-
-    return final_output_path
-
-# --- Real-Time-style Detection (Streams annotated frames) ---
-def stream_video_detection(video_file):
-    video_path = video_file  # ✅ FIXED
-
     cap = cv2.VideoCapture(video_path)
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps    = cap.get(cv2.CAP_PROP_FPS)
+
+    # Use static folder (Hugging Face requirement)
+    os.makedirs("static", exist_ok=True)
+    output_path = "static/output.mp4"
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
-        results = model.predict(frame, conf=0.25, iou=0.5)
-        boxes = results[0].boxes.xyxy.cpu().numpy()
+        results = model.predict(frame, conf=0.25, iou=0.5, verbose=False)
+        for result in results:
+            boxes = result.boxes
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls = int(box.cls[0])
+                label = model.names[cls]
 
-        for box in boxes:
-            x1, y1, x2, y2 = map(int, box[:4])
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7, (0, 255, 0), 2)
 
-        # Yield RGB frame to Gradio
-        yield cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        out.write(frame)
 
     cap.release()
+    out.release()
 
-# --- Gradio UI ---
+    return output_path
+
+# Gradio Interface
 with gr.Blocks() as demo:
-    gr.Markdown("## 🛑 Traffic Sign Detection App")
-    gr.Markdown("Upload a video to detect traffic signs using a YOLOv8 model.")
+    gr.Markdown("## 🛑 Traffic Sign Detection (with Classification)")
+    gr.Markdown("Upload a traffic video. The model detects and classifies signs into danger, mandatory, etc.")
 
-    with gr.Tab("1️⃣ Batch Detection (Returns Processed Video)"):
-        input_video = gr.Video(label="Upload Video")  # No `type="filepath"` needed
-        output_video = gr.Video(label="Detected Video")
-        run_btn = gr.Button("Run Detection")
-        run_btn.click(fn=detect_traffic_signs, inputs=input_video, outputs=output_video)
+    video_input = gr.Video(label="Upload Video")
+    video_output = gr.Video(label="Detected Video")
 
-    with gr.Tab("2️⃣ Live-style Detection (Frame by Frame)"):
-        input_stream = gr.Video(label="Upload Video for Streaming")
-        stream_output = gr.Image(label="Live Frame Output")
-        stream_btn = gr.Button("Start Streaming")
-        stream_btn.click(fn=stream_video_detection, inputs=input_stream, outputs=stream_output)
+    run_btn = gr.Button("Detect Traffic Signs")
+    run_btn.click(fn=detect_traffic_signs, inputs=video_input, outputs=video_output)
 
 demo.launch()

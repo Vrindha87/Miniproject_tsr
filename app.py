@@ -1,12 +1,15 @@
-
-
 import os
+import cv2
 import glob
 import shutil
+import numpy as np
 from ultralytics import YOLO
+import gradio as gr
 
-model = YOLO("yolov8_low_visibility_trained.pt")  # Make sure this is your trained model path
+# Load your trained model
+model = YOLO("yolov8_low_visibility_trained.pt")  # Change to your correct path if needed
 
+# --- Batch Detection (Full video, then return output file) ---
 def detect_traffic_signs(video_path):
     if not video_path:
         return "No input video"
@@ -24,29 +27,57 @@ def detect_traffic_signs(video_path):
     run_dirs = sorted(glob.glob("runs/detect/predict*"), key=os.path.getmtime)
     latest_run = run_dirs[-1]
 
-    # Find output video file inside the prediction folder
+    # Find the output video
     output_files = glob.glob(os.path.join(latest_run, "*.mp4"))
     if not output_files:
         return "No video result found"
 
-    # Copy to a predictable name Gradio can serve
+    # Save to a static name for Gradio to access
     final_output_path = "output.mp4"
     shutil.copy(output_files[0], final_output_path)
 
     return final_output_path
 
 
-# Gradio interface
-import gradio as gr
+# --- Real-Time-style Detection (frame-by-frame processing) ---
+def stream_video_detection(video_path):
+    cap = cv2.VideoCapture(video_path)
 
-demo = gr.Interface(
-    fn=detect_traffic_signs,
-    inputs=gr.Video(label="Upload Traffic Video"),
-    outputs=gr.Video(label="Detected Traffic Signs"),
-    title="Traffic Sign Detection",
-    description="Upload a traffic video. The model will detect traffic signs and return the video with bounding boxes."
-)
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Run prediction
+        results = model.predict(frame, conf=0.25, iou=0.5)
+        boxes = results[0].boxes.xyxy.cpu().numpy()
+
+        # Draw boxes
+        for box in boxes:
+            x1, y1, x2, y2 = map(int, box[:4])
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Yield for Gradio to stream frame
+        yield cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    cap.release()
+
+
+# --- Gradio UI ---
+with gr.Blocks() as demo:
+    gr.Markdown("## 🛑 Traffic Sign Detection App")
+    gr.Markdown("Upload a video to detect traffic signs using a YOLOv8 model.")
+
+    with gr.Tab("1️⃣ Batch Detection (Returns Processed Video)"):
+        input_video = gr.Video(label="Upload Video", type="filepath")
+        output_video = gr.Video(label="Detected Video", type="filepath")
+        run_btn = gr.Button("Run Detection")
+        run_btn.click(fn=detect_traffic_signs, inputs=input_video, outputs=output_video)
+
+    with gr.Tab("2️⃣ Live-style Detection (Frame by Frame)"):
+        input_stream = gr.Video(label="Upload Video for Streaming", type="filepath")
+        stream_output = gr.Image(label="Live Frame Output")
+        stream_btn = gr.Button("Start Streaming")
+        stream_btn.click(fn=stream_video_detection, inputs=input_stream, outputs=stream_output)
 
 demo.launch()
-
-
